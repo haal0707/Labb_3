@@ -1,0 +1,30 @@
+#Labb 3: Portfolio selection
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+dow_jones_data = pd.read_csv("C:\\Users\\HannesAlm\\Downloads\\Dow_SP500_9622_weekly.csv", delimiter = ";")
+gross_returns = dow_jones_data.iloc[:100, 1 : 27] / dow_jones_data.iloc[:100, 1 : 27].shift()
+gross_returns = gross_returns.dropna()
+mean_array = np.array(np.mean(100 * gross_returns.iloc[1 : 101, 0 : 27], axis = 0))
+vol_array = np.array(np.std(100 * gross_returns.iloc[1 : 101, 0 : 27]))
+cov_mat = np.cov(gross_returns, rowvar = False)
+
+stocks = list(gross_returns.columns.values)
+plt.scatter(vol_array, mean_array)
+for i, stock in enumerate(stocks):
+    plt.text(vol_array[i], mean_array[i], stock, ha = "left", va = "bottom")
+
+sigma_sum = np.sum(i**-2 for i in vol_array)
+mvs = np.zeros(26)
+for i in range(len(vol_array)):
+    mvs[i] = vol_array[i]**-2 / sigma_sum
+plt.plot(mvs)
+plt.xlim(0, 8)
+plt.ylim(99, 102)
+
+#Task 1b
+
+def w_func():
+    print("hello")
+
