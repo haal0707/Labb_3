@@ -1,0 +1,102 @@
+#Labb 3: Portfolio selection
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as op
+
+dow_jones_data = pd.read_csv("C:\\Users\\HannesAlm\\Downloads\\Dow_SP500_9622_weekly.csv", delimiter = ";")
+gross_returns = dow_jones_data.iloc[:100, 1 : 27] / dow_jones_data.iloc[:100, 1 : 27].shift()
+gross_returns = gross_returns.dropna()
+mean_array = np.array(np.mean(100 * gross_returns.iloc[1 : 101, 0 : 27], axis = 0))
+vol_array = np.array(np.std(100 * gross_returns.iloc[1 : 101, 0 : 27]))
+cov_mat = np.cov(gross_returns, rowvar = False)
+
+stocks = list(gross_returns.columns.values)
+"""
+plt.scatter(vol_array, mean_array)
+for i, stock in enumerate(stocks):
+    plt.text(vol_array[i], mean_array[i], stock, ha = "left", va = "bottom")
+
+sigma_sum = np.sum(i**-2 for i in vol_array)
+mvs = np.zeros(26)
+for i in range(len(vol_array)):
+    mvs[i] = vol_array[i]**-2 / sigma_sum
+plt.plot(mvs)
+plt.xlim(0, 8)
+plt.ylim(99, 102)
+"""
+#Task 1b
+#Expected returns = mean array
+mu_V_init = np.arange(0.99, 1.02, 0.0001) * 100
+
+def const_func_1(weights):
+    return np.sum(weights) - 1
+
+def const_func_2(weights, means):
+    return np.dot(weights.T, means)
+
+min_var_portfolio_return = []
+min_var_portfolio_volatility = []
+min_var_portfolio_return_NS = []
+mean_array_div = mean_array / 100
+
+A = np.ones(26).T @ np.linalg.inv(cov_mat) @ np.ones(26)
+B = np.ones(26).T @ np.linalg.inv(cov_mat) @ mean_array_div
+C = mean_array_div.T @ np.linalg.inv(cov_mat) @ mean_array_div
+D = A * C - pow(B, 2)
+
+#sharpe_weights = (np.linalg.inv(cov_mat) @ (np.ones(26) * C - mean_array_div * B)) / D
+nominator = np.linalg.inv(cov_mat) @ (mean_array_div - np.ones(26))
+denom = np.ones(26).T @ np.linalg.inv(cov_mat) @ (mean_array_div - np.ones(26))
+sharpe_weights = nominator / denom * 100
+sharpe_portfolio_return = np.dot(sharpe_weights, mean_array_div)
+sharpe_portfolio_volatility = np.sqrt(sharpe_weights.T @ cov_mat @ sharpe_weights)
+
+for step in mu_V_init:
+    optimal_weights = (A * step - B * 100) / D * np.linalg.inv(cov_mat) @ mean_array_div + (C * 100 - B * step) / D * np.linalg.inv(cov_mat) @ np.ones(26)
+    min_var_portfolio_return.append(np.dot(optimal_weights, mean_array_div))
+    min_var_portfolio_volatility.append(np.sqrt(optimal_weights.T @ cov_mat @ optimal_weights))
+
+returns = np.linspace(99.64, 101.23, 100)
+#returns = np.linspace(99, 102, 100)
+min_var_portfolio_volatility_NS = np.zeros(len(returns)) #Changed from list here
+allocation_volatility = np.zeros(len(returns))
+bounds = [(0, 1) for _ in range(26)]
+count = 0
+for step in returns:
+    constraints = ({'type' : 'eq', 'fun' : const_func_1},
+    {'type' : 'eq', 'fun': lambda w : const_func_2(w, mean_array) - step})
+    f = lambda weights: np.sqrt(np.dot(weights, np.dot(weights, cov_mat)))
+    result = op.minimize(f,np.ones(26) / 26,method = "SLSQP", constraints = constraints, bounds = bounds)
+    min_var_portfolio_volatility_NS[count] = 100 * result['fun']
+    allocation_volatility[count] = np.sqrt(result['x'].T @ cov_mat @ result['x'])
+    count += 1
+
+#Plots for 1a, b and c
+
+plt.figure(figsize = (12, 5))
+plt.scatter(vol_array, mean_array, label='Individual Stocks')
+plt.plot(min_var_portfolio_volatility, min_var_portfolio_return, label='Minimum Variance Portfolio')
+plt.plot(min_var_portfolio_volatility_NS, returns, label = "Minimum Variance Portolio, No shorting")
+plt.scatter(sharpe_portfolio_volatility, sharpe_portfolio_return, color='red', marker='X', s=200, label='Sharpe Portfolio, shorting allowed')
+plt.xlim(0, 8)
+plt.ylim(99, 102)
+plt.legend()
+plt.show
+
+#Plot for 1d
+"""
+plt.figure(figsize = (14, 7))
+plt.bar(stocks, sharpe_weights)
+plt.title("Sharpe portfolio allocations")
+plt.xlabel("Stocks")
+plt.ylabel("Allocations")
+"""
+#Plot for 1e
+plt.figure(figsize=(12, 8))
+plt.stackplot(min_var_portfolio_volatility_NS, returns, labels=stocks)
+plt.xlabel('Volatility')
+plt.ylabel('Mean')
+plt.title('Efficient Frontier Allocations (No Short Selling)')
+plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+plt.show()
