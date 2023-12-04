@@ -1,0 +1,92 @@
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import matplotlib.pyplot as plt
+import function_library as fl #This is just to access the code from assignment 2a)
+from matplotlib.dates import DateFormatter
+from datetime import datetime
+import scipy.optimize as op
+
+#Data importing and cleaning
+DJ_data = pd.read_csv("C:\\Users\\Johan\\Downloads\\Dow_SP500_9622_weekly.csv", delimiter = ";")
+gross_returns = DJ_data.iloc[-101:, 1 : 28] / DJ_data.iloc[-101:, 1 : 28].shift() #the last 100 returns (need 101 datapoints)
+gross_returns = gross_returns.dropna()
+
+#Add risk free asset, gets first column
+#gross_returns.insert(loc = 0, column = 'Zero', value = 1)
+
+#Given numbers
+L_zero = 100
+V_zero = 100
+
+#Parameter estimation
+mean_returns = gross_returns.mean()
+demeaned_gross_returns = gross_returns/mean_returns
+cov_mat = demeaned_gross_returns.cov() #Should I use a de-meaned gross return? ,remember squared
+#cov_mat.loc[27]['^GSPC'] = L0 * (Sigma RL)^2
+exp_L = L_zero * mean_returns['^GSPC']
+cov_LR_vec = L_zero * cov_mat.iloc[0:-1]['^GSPC'].to_numpy()
+
+#Do I have to calculate optimal allocation mathematically here?
+#I initiate weight vector ahead of optimization
+weight_vec = np.ones(len(mean_returns))
+cov_R_mat = cov_mat.iloc[0:-1,0:-1] #demeaned_gross_returns.iloc[:,:-1].cov()
+cov_R_mat_inv = np.linalg.inv(cov_mat.iloc[0:-1,0:-1].to_numpy())
+weight_vec_h = np.matmul(cov_R_mat_inv,cov_LR_vec.T)
+
+#3a, plots
+'''
+Current situation on results: When we drop 0 returns we get sum of weight_vec_h to 98.25
+We need 100 to be fully invested, does not take inte account risk free asset
+'''
+plt.figure(figsize=(14,7))
+plt.bar(np.arange(len(weight_vec_h)),weight_vec_h)
+plt.xticks(np.arange(len(weight_vec_h)),gross_returns.iloc[:,:-1].columns)
+tab_3a = pd.DataFrame(data=weight_vec_h,index = gross_returns.iloc[:,:-1].columns)
+
+#3b and forward
+'''
+Efficient frontier is a line with risk free asset in simple model
+Alpha is a changeable variable and will go from 0 -> 1
+''' 
+'''
+weight_vec[1:] = weight_vec_h/np.sum(weight_vec_h)
+res = 1000 #resolution of alpha
+alpha_vec = np.arange(res)/res
+ex_ret = np.zeros(res)
+for alpha in alpha_vec:
+    ex_ret[int(alpha*res)] = np.sqrt(np.var(weight_vec[0] * (1-mean_returns.loc['^GSPC']) * alpha + (1-alpha) * weight_vec[1:] * (mean_returns.iloc[:-1] - mean_returns.loc['^GSPC'])))
+
+#The simple solution
+plt.plot(ex_ret)
+'''
+
+#The more difficult solution with hedge portfolio, rf asset and excess invested
+res = 500
+one_vec = np.ones(len(weight_vec_h))
+loop_arr = np.linspace(0.99,1.02,res)
+ex_ret = np.zeros(res)
+trac_err = np.zeros(res)
+weight_mat = np.zeros((res,len(weight_vec)))
+R_zero = 1
+count = 0
+for M_zero in loop_arr:
+    num = (M_zero - R_zero) * V_zero - weight_vec_h @ (mean_returns[:-1] - R_zero * one_vec)
+    denum = (mean_returns[:-1] - R_zero * one_vec).T @ cov_R_mat_inv @ ( (mean_returns[:-1] - R_zero * one_vec))
+    weight_vec[1:] = (num/denum) * (cov_R_mat_inv @ (mean_returns[:-1] - R_zero*one_vec)) + weight_vec_h
+    weight_vec[0] = V_zero - weight_vec[1:] @ one_vec
+    weight_mat[count,:] = weight_vec
+    trac_err[count] = np.sqrt(weight_vec[1:].T @ cov_R_mat @ weight_vec[1:] - 2 * weight_vec[1:].T @ cov_LR_vec + (L_zero**2 * cov_mat.iloc[-1,-1]))
+    ex_ret[count] = np.mean(weight_vec[0] * one_vec + weight_vec[1:].T @ mean_returns.iloc[:-1] - exp_L)
+    count += 1
+
+#Plot of tracking error
+plt.figure(figsize=(14,7))
+plt.plot(trac_err,ex_ret)
+
+#Minimum tracking error
+print(min(trac_err))
+
+#Portfolio return for minimum tracking error
+excess_ret = weight_mat[np.argmin(trac_err),1:] @ mean_returns.iloc[:-1] + weight_mat[np.argmin(trac_err),0] - exp_L
+print(excess_ret)
