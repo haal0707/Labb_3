@@ -1,0 +1,125 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as op
+
+#Task 2 below
+
+def const_func_1(weights):
+    return np.sum(weights) - 1
+def const_func_2(weights, means):
+    return np.dot(weights.T, means)
+
+V_init = 100
+target_return = 1.00275
+n = 26 #Change to 27 if we want to include the index
+
+dow_jones_data = pd.read_csv("C:\\Users\\HannesAlm\\Downloads\\Dow_SP500_9622_weekly.csv", delimiter = ";")
+gross_returns = dow_jones_data.iloc[:, 1 : n+1] / dow_jones_data.iloc[:, 1 : n+1].shift()
+gross_returns = gross_returns.dropna()
+bounds = [(0, 1) for _ in range(n)]
+
+portfolio = "Shorting allowed"
+
+#def markowitz_model(portfolio):
+count = 1
+portfolio_values = np.zeros(1310)
+portfolio_values[0] = V_init
+for week in range(100, len(gross_returns) + 1):
+    #window_gross = dow_jones_data.iloc[count - 1: week, 1 : n + 1] / dow_jones_data.iloc[count - 1: week, 1 : n + 1].shift()
+    #window_gross = window_gross.dropna()
+    window_gross = gross_returns.iloc[count - 1: week, :]
+    window_mean = np.array(np.mean(window_gross,axis = 0))
+    window_cov = np.cov(window_gross, rowvar = False)
+    if week == 1406:
+         next_2nd_gross = window_gross
+
+    if week == 100:
+         first_gross = window_gross
+    if week == 101:
+         second_gross = window_gross
+
+    if portfolio == "Shorting allowed":
+        A = np.ones(n).T @ np.linalg.inv(window_cov) @ np.ones(n)
+        B = np.ones(n).T @ np.linalg.inv(window_cov) @ window_mean
+        C = window_mean.T @ np.linalg.inv(window_cov) @ window_mean
+        D = A * C - pow(B, 2)
+        optimal_weights = (A * target_return * portfolio_values[count - 1] - B * portfolio_values[count - 1]) / D * np.linalg.inv(window_cov) @ window_mean + (C * portfolio_values[count - 1] - B * target_return * portfolio_values[count - 1]) / D * np.linalg.inv(window_cov) @ np.ones(n)
+        optimal_weights = optimal_weights / np.sum(optimal_weights)
+        current_value = portfolio_values[count - 1] * (np.sum(optimal_weights * gross_returns.iloc[count - 1 + 99, :]))
+        portfolio_values[count] = current_value
+
+    elif portfolio == "No shorting allowed":
+            constraints = ({'type' : 'eq', 'fun' : const_func_1},
+            {'type' : 'eq', 'fun': lambda w : const_func_2(w, window_mean) - target_return})
+            f = lambda weights: np.sqrt((np.dot(weights.T, np.dot(weights, window_cov))))
+            result = op.minimize(f, np.ones(n) / n, method = "SLSQP", constraints = constraints, bounds = bounds)
+            if count < len(gross_returns) - 100:
+                portfolio_values[count] = portfolio_values[count - 1] * (np.sum(result['x'] * gross_returns.iloc[count - 1 + 100, :]))
+
+    elif portfolio == "Minimum variance portfolio":
+            optimal_weights = portfolio_values[count - 1] * (np.linalg.inv(window_cov) @ np.ones(n)) / (np.ones(n).T @ np.linalg.inv(window_cov) @ np.ones(n))
+            optimal_weights = optimal_weights / np.sum(optimal_weights)
+            if count < len(gross_returns) - 100:
+                portfolio_values[count] = portfolio_values[count - 1] * (np.sum(optimal_weights * gross_returns.iloc[count - 1 + 100, :]))
+
+    elif portfolio == "Equal weights portfolio":
+        equal_weights = np.ones(n) / n
+        if count < len(gross_returns) - 100:
+            portfolio_values[count] = portfolio_values[count - 1] * (np.sum(equal_weights * gross_returns.iloc[count - 1 + 100, :]))
+    
+    elif portfolio == "Sharpe portfolio":
+            #minimize y.T * cov * y under:
+            #mu * y.T = 1
+            #A * y >= 0
+            #0 <= y
+        constraints = ({'type' : 'eq', 'fun' : const_func_1},
+        {'type' : 'eq', 'fun': lambda w : const_func_2(w, window_mean) - target_return}) #target return here???
+        f = lambda weights : weights.T @ window_cov @ weights
+        result = op.minimize(f, np.ones(n) / n, method = "SLSQP", constraints = constraints, bounds = bounds)
+        if count < len(gross_returns) - 100:
+            portfolio_values[count] = portfolio_values[count - 1] * (np.sum(result['x'] * gross_returns.iloc[count - 1 + 100, :]))
+
+    elif portfolio == "Sharpe portfolio, shrinkage":
+            shrinkage_constant = 0.3
+            numpy_gross = window_gross.to_numpy()
+            demeaned_gross = numpy_gross - np.mean(numpy_gross)
+            sample_cov = 1 / len(window_gross) * demeaned_gross.T @ demeaned_gross
+            rows, cols = window_cov.shape
+            sigma = np.zeros((rows, cols))
+            np.fill_diagonal(sigma, np.sqrt(window_cov.diagonal()))
+            cf = np.ones((rows, cols))
+            cf[np.triu_indices(rows, k = 1)] = shrinkage_constant #Upper triangle to shrinkage constant
+            cf[np.tril_indices(rows, k = -1)] = shrinkage_constant #Lower triangle to shrinkage constant
+            F = sigma @ cf @ sigma
+            m = (np.ones(n).T @ window_mean) / n
+
+            shrinkage_cov = (1 - shrinkage_constant) * sample_cov + shrinkage_constant * F
+            mu_shrinkage = (1 - shrinkage_constant) * window_mean + shrinkage_constant * m
+
+            constraints = ({'type' : 'eq', 'fun' : const_func_1},
+            {'type' : 'eq', 'fun': lambda w : const_func_2(w, mu_shrinkage) - target_return})
+            f = lambda weights : weights.T @ shrinkage_cov @ weights
+            result = op.minimize(f, np.ones(n) / n, method = "SLSQP", constraints = constraints, bounds = bounds)
+            if count < len(gross_returns) - 100:
+                portfolio_values[count] = portfolio_values[count - 1] * (np.sum(result['x'] * gross_returns.iloc[count - 1 + 100, :]))
+    count += 1
+            
+    
+    #return portfolio_values
+"""
+shorting_allowed = markowitz_model("Shorting allowed")
+no_shorting = markowitz_model("No shorting allowed")
+mvp = markowitz_model("Minimum variance portfolio")
+equal_weights = markowitz_model("Equal weights portfolio")
+no_shorting_sharpe = markowitz_model("Sharpe portfolio")
+sharpe_shrinkage = markowitz_model("Sharpe portfolio, shrinkage")
+plt.figure(figsize = (12, 6))
+plt.plot(range(0, len(shorting_allowed)), shorting_allowed, label = "Shorting allowed")
+plt.plot(range(0, len(no_shorting)), no_shorting, label = "No shorting allowed")
+plt.plot(range(0, len(mvp)), mvp, label = "Minimum variance portfolio")
+plt.plot(range(0, len(equal_weights)), equal_weights, label = "Equal weights portfolio")
+plt.plot(range(0, len(no_shorting_sharpe)), no_shorting_sharpe, label = "Sharpe portfolio, no shorting allowed")
+plt.plot(range(0, len(sharpe_shrinkage)), sharpe_shrinkage, label = "Sharpe portfolio, shrinkage")
+plt.legend()
+"""
