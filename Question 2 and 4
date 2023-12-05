@@ -1,0 +1,185 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as op
+
+#Task 2 below
+
+def const_func_1(weights):
+    return np.sum(weights) - 1
+def const_func_2(weights, means):
+    return np.dot(weights.T, means)
+
+V_init = 100
+target_return = 1.00275
+n = 26 #Change to 27 if we want to include the index
+
+dow_jones_data = pd.read_csv("C:\\Users\\HannesAlm\\Downloads\\Dow_SP500_9622_weekly.csv", delimiter = ";")
+gross_returns = dow_jones_data.iloc[:, 1 : n+1] / dow_jones_data.iloc[:, 1 : n+1].shift()
+gross_returns = gross_returns.dropna()
+bounds = [(0, 1) for _ in range(n)]
+
+#portfolio = "Shorting allowed"
+
+def get_markowitz_stats(portfolio):
+     
+    weekly_percentage = np.diff(portfolio) / portfolio[1 :]
+    #Get annualized mean
+    weekly_mean = np.mean(weekly_percentage)
+    annualized_mean = np.power(1 + weekly_mean, 52) - 1 #Fine to use 52 as yearly amount of weeks?
+
+    #Get annualized volatility
+    weekly_volatility = np.std(weekly_percentage)
+    annualized_volatility = np.sqrt(52) * weekly_volatility
+
+    #Get sharpe ratio
+    sharpe_ratio = annualized_mean / annualized_volatility
+
+    #Get maximum drawdown --> Are we supposed to use portfolio values or percentage values here?
+    draw_down = np.zeros(len(portfolio))
+    for tau in range(len(portfolio)):
+        if tau == 0:
+            max_val = portfolio[tau]
+        else:
+            if portfolio[tau] > max_val:
+                max_val = portfolio[tau]
+        draw_down[tau] = (max_val - portfolio[tau]) / max_val
+
+    maximum_drawdown = np.max(draw_down)
+
+    return [annualized_mean, annualized_volatility, sharpe_ratio, maximum_drawdown]
+
+#portfolio = "No shorting allowed"
+def markowitz_model(portfolio):
+    count = 0
+    portfolio_values = np.zeros(1309)
+    portfolio_values[0] = V_init
+    enc = np.zeros(1308) #Nedd to review this
+    for week in range(100, len(gross_returns)):
+        #window_gross = dow_jones_data.iloc[count - 1: week, 1 : n + 1] / dow_jones_data.iloc[count - 1: week, 1 : n + 1].shift()
+        #window_gross = window_gross.dropna()
+        window_gross = gross_returns.iloc[count : week, :]
+        window_mean = np.array(np.mean(window_gross,axis = 0))
+        window_cov = np.cov(window_gross, rowvar = False)
+        grand_mean = np.mean(window_mean)
+        if week == 1406:
+            next_2nd_gross = window_gross
+
+        if week == 100:
+            first_gross = window_gross
+        if week == 101:
+            second_gross = window_gross
+
+        if portfolio == "Shorting allowed":
+            A = np.ones(n).T @ np.linalg.inv(window_cov) @ np.ones(n)
+            B = np.ones(n).T @ np.linalg.inv(window_cov) @ window_mean
+            C = window_mean.T @ np.linalg.inv(window_cov) @ window_mean
+            D = A * C - pow(B, 2)
+            optimal_weights = (A * target_return * portfolio_values[count] - B * portfolio_values[count]) / D * np.linalg.inv(window_cov) @ window_mean + (C * portfolio_values[count] - B * target_return * portfolio_values[count]) / D * np.linalg.inv(window_cov) @ np.ones(n)
+            optimal_weights = optimal_weights / np.sum(optimal_weights)
+            enc[count] = 1 / np.sum(optimal_weights ** 2)
+            current_value = portfolio_values[count] * (np.sum(optimal_weights * gross_returns.iloc[count + 100, :]))
+            portfolio_values[count + 1] = current_value
+
+        elif portfolio == "No shorting allowed":
+                constraints = ({'type' : 'eq', 'fun' : const_func_1},
+                {'type' : 'eq', 'fun': lambda w : const_func_2(w, window_mean) - target_return})
+                f = lambda weights: np.sqrt((np.dot(weights.T, np.dot(weights, window_cov))))
+                result = op.minimize(f, np.ones(n) / n, method = "SLSQP", constraints = constraints, bounds = bounds)
+                enc[count] = 1 / np.sum(result['x'] ** 2)
+                if week == 100:
+                    first_weights = result['x']
+                portfolio_values[count + 1] = portfolio_values[count] * (np.sum(result['x'] * gross_returns.iloc[count + 100, :]))
+
+        elif portfolio == "Minimum variance portfolio":
+                optimal_weights = portfolio_values[count] * (np.linalg.inv(window_cov) @ np.ones(n)) / (np.ones(n).T @ np.linalg.inv(window_cov) @ np.ones(n))
+                optimal_weights = optimal_weights / np.sum(optimal_weights)
+                enc[count] = 1 / np.sum(optimal_weights ** 2)
+                portfolio_values[count + 1] = portfolio_values[count] * (np.sum(optimal_weights * gross_returns.iloc[count + 100, :]))
+
+        elif portfolio == "Equal weights portfolio":
+            equal_weights = np.ones(n) / n
+            enc[count] = 1 / np.sum(equal_weights ** 2)
+            portfolio_values[count + 1] = portfolio_values[count] * (np.sum(equal_weights * gross_returns.iloc[count + 100, :]))
+        
+        elif portfolio == "Sharpe portfolio":
+                #minimize y.T * cov * y under:
+                #mu * y.T = 1
+                #A * y >= 0
+                #0 <= y
+            constraints = ({'type' : 'eq', 'fun' : const_func_1},
+            {'type' : 'eq', 'fun': lambda w : const_func_2(w, window_mean) - grand_mean}) #target return here??? No.
+            f = lambda weights : weights.T @ window_cov @ weights
+            result = op.minimize(f, np.ones(n) / n, method = "SLSQP", constraints = constraints, bounds = bounds)
+            enc[count] = 1 / np.sum(result['x'] ** 2)
+            portfolio_values[count + 1] = portfolio_values[count] * (np.sum(result['x'] * gross_returns.iloc[count + 100, :]))
+
+        elif portfolio == "Sharpe portfolio, shrinkage":
+                shrinkage_constant = 0.3
+                numpy_gross = window_gross.to_numpy()
+                demeaned_gross = numpy_gross - np.mean(numpy_gross)
+                sample_cov = 1 / len(window_gross) * demeaned_gross.T @ demeaned_gross
+                rows, cols = window_cov.shape
+                sigma = np.zeros((rows, cols))
+                np.fill_diagonal(sigma, np.sqrt(window_cov.diagonal()))
+                cf = np.ones((rows, cols))
+                cf[np.triu_indices(rows, k = 1)] = shrinkage_constant #Upper triangle to shrinkage constant
+                cf[np.tril_indices(rows, k = -1)] = shrinkage_constant #Lower triangle to shrinkage constant
+                F = sigma @ cf @ sigma
+                m = (np.ones(n).T @ window_mean) / n
+
+                shrinkage_cov = (1 - shrinkage_constant) * sample_cov + shrinkage_constant * F
+                mu_shrinkage = (1 - shrinkage_constant) * window_mean + shrinkage_constant * m
+                #grand_mean = np.mean(mu_shrinkage)
+                constraints = ({'type' : 'eq', 'fun' : const_func_1},
+                {'type' : 'eq', 'fun': lambda w : const_func_2(w, mu_shrinkage) - grand_mean})
+                f = lambda weights : weights.T @ shrinkage_cov @ weights
+                result = op.minimize(f, np.ones(n) / n, method = "SLSQP", constraints = constraints, bounds = bounds)
+                enc[count] = 1 / np.sum(result['x'] ** 2)
+                portfolio_values[count + 1] = portfolio_values[count] * (np.sum(result['x'] * gross_returns.iloc[count + 100, :]))
+        count += 1
+                
+    enc_mean = np.mean(enc)
+    return [portfolio_values, enc_mean]
+
+shorting_allowed, enc_shorting_allowed = markowitz_model("Shorting allowed")
+shorting_allowed_data = get_markowitz_stats(shorting_allowed)
+
+no_shorting, enc_no_shortin = markowitz_model("No shorting allowed")
+no_shorting_data = get_markowitz_stats(no_shorting)
+
+mvp, enc_mvp = markowitz_model("Minimum variance portfolio")
+mvp_data = get_markowitz_stats(mvp)
+
+equal_weights, enc_equal_weight = markowitz_model("Equal weights portfolio")
+equal_weights_data = get_markowitz_stats(equal_weights)
+
+no_shorting_sharpe, enc_no_shorting_sharpe = markowitz_model("Sharpe portfolio")
+no_shorting_sharpe_data = get_markowitz_stats(no_shorting_sharpe)
+
+sharpe_shrinkage, enc_sharpe_shrinkage = markowitz_model("Sharpe portfolio, shrinkage")
+sharpe_shrinkage_data = get_markowitz_stats(sharpe_shrinkage)
+
+#Plot for question 4
+
+plt.figure(figsize = (12, 6))
+plt.plot(range(0, len(shorting_allowed)), shorting_allowed, label = "Shorting allowed")
+plt.plot(range(0, len(no_shorting)), no_shorting, label = "No shorting allowed")
+plt.plot(range(0, len(mvp)), mvp, label = "Minimum variance portfolio")
+plt.plot(range(0, len(equal_weights)), equal_weights, label = "Equal weights portfolio")
+plt.plot(range(0, len(no_shorting_sharpe)), no_shorting_sharpe, label = "Sharpe portfolio, no shorting allowed")
+
+plt.plot(range(0, len(sharpe_shrinkage)), sharpe_shrinkage, label = "Sharpe portfolio, shrinkage")
+plt.legend()
+
+#Dataframe for question 2 and 4
+data_2_4 = {"Annualized mean" : [shorting_allowed_data[0], no_shorting_data[0], mvp_data[0], equal_weights_data[0], no_shorting_sharpe_data[0], sharpe_shrinkage_data[0]], 
+          "Annualized volatility" : [shorting_allowed_data[1], no_shorting_data[1], mvp_data[1], equal_weights_data[1], no_shorting_sharpe_data[1], sharpe_shrinkage_data[1]], 
+          "Sharpe ratio" : [shorting_allowed_data[2], no_shorting_data[2], mvp_data[2], equal_weights_data[2], no_shorting_sharpe_data[2], sharpe_shrinkage_data[2]], 
+          "Max drawdown" : [shorting_allowed_data[3], no_shorting_data[3], mvp_data[3], equal_weights_data[3], no_shorting_sharpe_data[3], sharpe_shrinkage_data[3]], 
+          "ENC" : [enc_shorting_allowed, enc_no_shortin, enc_mvp, enc_equal_weight, enc_no_shorting_sharpe, enc_sharpe_shrinkage]}
+df_2 = pd.DataFrame(data = data_2_4)
+df_2.index = ["shorting allowed", "no shorting", "minimum variance", "equal weights", "no short sharpe", "sharpe shrinkage"]
+
+#Value dataframe for question 2 and 4
+#values_2_4 = 
