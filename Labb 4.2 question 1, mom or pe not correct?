@@ -1,0 +1,68 @@
+#Lab_4 ML
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as op
+
+DJ_data = pd.read_csv("C:\\Users\\Johan\\Downloads\\DowJones_daily_96_23.csv", delimiter = ",")
+ewma_20 = DJ_data.loc[:,'AAPL':'XOM'].ewm(span = 20).mean()
+ewma_60 = DJ_data.loc[:,'AAPL':'XOM'].ewm(span = 60).mean()
+
+#Log returns:
+DJ_data_log = np.log(1 + DJ_data.iloc[:,1:])
+
+#Decicion making for all the strategies
+#Market following strategy
+mf_s = DJ_data.iloc[1002:,1:].mean(axis = 1)
+
+#Momentum following strategy
+mom_s_dec_mat = np.sign(ewma_20.iloc[1002:,:]) #correct or move one period back?
+mom_ret_mat = DJ_data.iloc[1002:,1:].to_numpy(float)
+mom_s_dec_mat[mom_s_dec_mat == 0] = 1
+mom_s = np.mean(mom_ret_mat * mom_s_dec_mat, axis = 1)#need log returns?
+mom_unmeaned = mom_ret_mat * mom_s_dec_mat
+
+#percistancy
+pe_s_dec_mat = np.sign(DJ_data.iloc[1001:,1:].shift(1).dropna())
+pe_ret_mat = DJ_data.iloc[1002:,1:].to_numpy(float)
+pe_s_dec_mat[pe_s_dec_mat == 0] = 1
+#pe_ret_mat[pe_s_dec_mat == -1] = pe_ret_mat
+#pe_s = pe_s_dec_mat * pe_ret_mat
+pe_s = np.mean(pe_ret_mat * pe_s_dec_mat, axis = 1)
+pe_unmeaned = pe_ret_mat * pe_s_dec_mat
+
+#loop and calculate returns
+mf_s_evo = np.zeros((len(mf_s)+1))
+mom_s_evo = np.zeros((len(mf_s)+1))
+pe_s_evo = np.zeros((len(mf_s)+1))
+mf_s_evo[0] = mom_s_evo[0] = pe_s_evo[0] = 0
+for i in range(len(mf_s)):
+    mf_s_evo[i + 1] = mf_s_evo[i] + mf_s.iloc[i]
+    mom_s_evo[i + 1] = mom_s_evo[i] + mom_s.iloc[i]
+    pe_s_evo[i + 1] = pe_s_evo[i] + pe_s.iloc[i]
+
+#1a) plot of strategy evolutions
+plt.plot(mf_s_evo)
+plt.plot(mom_s_evo)
+plt.plot(pe_s_evo)
+
+#1b) 250th day table
+evo_df = pd.DataFrame([mf_s_evo,mom_s_evo,pe_s_evo])
+evo_df.iloc[:,::250]
+
+#1c) key figures table
+strategies1 = ["Market following","Momentum strategy","Percistance strategy"]
+diff_df = pd.DataFrame(list(zip(mf_s,mom_s,pe_s)), columns = strategies1)
+key_figs = ["Annulized mean","Volatility","Sharpe ratio","Win percentage", "Average precision"]
+key_fig_table = pd.DataFrame(np.zeros((len(key_figs),len(strategies1))), columns = strategies1, index = key_figs)
+for strat in strategies1:
+    key_fig_table.loc[key_figs[0]][strat] = diff_df[strat].mean()*252
+    key_fig_table.loc[key_figs[1]][strat] = diff_df[strat].std() * np.sqrt(252)
+    key_fig_table.loc[key_figs[2]][strat] = (diff_df[strat].mean() * 252) / (diff_df[strat].std() * np.sqrt(252))
+    key_fig_table.loc[key_figs[3]][strat] = diff_df[diff_df[strat] >= 0][strat].count() / len(diff_df[strat])
+
+key_fig_table.loc[key_figs[4]][strategies1[0]] = np.sum(DJ_data.iloc[1002:,1:][DJ_data.iloc[1002:,1:] >= 0].count()) / np.sum(DJ_data.iloc[1002:,1:].count())
+key_fig_table.loc[key_figs[4]][strategies1[1]] = np.sum(mom_unmeaned[mom_unmeaned >= 0].count()) / np.sum(mom_unmeaned.count())
+key_fig_table.loc[key_figs[4]][strategies1[2]] = np.sum(pe_unmeaned[pe_unmeaned >= 0].count()) / np.sum(pe_unmeaned.count())
+
+
