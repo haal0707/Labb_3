@@ -1,0 +1,64 @@
+#2a
+#Linear regression algorithm, Decision tree classifiers, probably wrong, have to do it stockwise with all the information!
+pred_size = len(DJ_data.iloc[1002:,1:])
+LR_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
+DT_dec_mat_2 = np.zeros((pred_size,len(DJ_data.columns)-1))
+DT_dec_mat_3 = np.zeros((pred_size,len(DJ_data.columns)-1))
+for day in range(pred_size):
+    X1 = ewma_20.iloc[day+1:day+1001,:]  # Feature 1
+    X2 = ewma_60.iloc[day+1:day+1001,:]  # Feature 2
+    i = 0
+    for stock in ewma_20.columns:
+        Y = DJ_data.iloc[day+1:day+1001][stock]  # Make loop here for each stock as training variable
+        Y2 = np.sign(DJ_data.iloc[day+1:day+1001][stock])  # Target with sign
+
+        #Create the linear regression model
+        model = LinearRegression()
+        model2 = DecisionTreeClassifier(max_depth=2)
+        model3 = DecisionTreeClassifier(max_depth=3)
+
+        model.fit(np.hstack((X1, X2)), Y)
+        model2.fit(np.hstack((X1, X2)), Y2)
+        model3.fit(np.hstack((X1, X2)), Y2)
+        #Generate predictions
+        predictions = model.predict(np.hstack((ewma_20.iloc[day+1002:day+1003,:], ewma_60.iloc[day+1002:day+1003,:])))
+        predictions2 = model2.predict(np.hstack((ewma_20.iloc[day+1002:day+1003,:], ewma_60.iloc[day+1002:day+1003,:])))
+        predictions3 = model3.predict(np.hstack((ewma_20.iloc[day+1002:day+1003,:], ewma_60.iloc[day+1002:day+1003,:])))
+        LR_dec_mat[day,i] = np.where(predictions > 0, 1, -1)
+        DT_dec_mat_2[day,i] = np.where(predictions2 > 0, 1, -1)
+        DT_dec_mat_3[day,i] = np.where(predictions3 > 0, 1, -1)
+        i += 1
+
+LR_s = np.mean(ret_mat * LR_dec_mat, axis = 1)
+DT_s_2 = np.mean(ret_mat * DT_dec_mat_2, axis = 1)
+DT_s_3 = np.mean(ret_mat * DT_dec_mat_3, axis = 1)
+LR_s_evo = np.zeros((len(mf_s)+1))
+DT_s_2_evo = np.zeros((len(mf_s)+1))
+DT_s_3_evo = np.zeros((len(mf_s)+1))
+for i in range(len(LR_s)):
+    LR_s_evo[i + 1] = LR_s_evo[i] + LR_s[i]
+    DT_s_2_evo[i + 1] = DT_s_2_evo[i] + DT_s_2[i]
+    DT_s_3_evo[i + 1] = DT_s_3_evo[i] + DT_s_3[i]
+
+#2b
+evo_df = pd.DataFrame([LR_s_evo,DT_s_2_evo,DT_s_3_evo])
+evo_df.iloc[:,::250]
+
+#2c
+strategies2 = ["Linear regression","Decision tree 2","Decision tree 3"]
+diff_df = pd.DataFrame(list(zip(LR_s,DT_s_2,DT_s_3)), columns = strategies2)
+key_figs2 = ["Annulized mean","Volatility","Sharpe ratio","Win percentage", "Average precision"]
+key_fig_table2 = pd.DataFrame(np.zeros((len(key_figs),len(strategies2))), columns = strategies2, index = key_figs)
+for strat in strategies2:
+    key_fig_table2.loc[key_figs2[0]][strat] = diff_df[strat].mean()*252
+    key_fig_table2.loc[key_figs2[1]][strat] = diff_df[strat].std() * np.sqrt(252)
+    key_fig_table2.loc[key_figs2[2]][strat] = (diff_df[strat].mean() * 252) / (diff_df[strat].std() * np.sqrt(252))
+    key_fig_table2.loc[key_figs2[3]][strat] = diff_df[diff_df[strat] >= 0][strat].count() / len(diff_df[strat])
+
+LR_unm = ret_mat * LR_dec_mat
+DT_s_2_unm = ret_mat * DT_dec_mat_2
+DT_s_3_unm = ret_mat * DT_dec_mat_3
+
+key_fig_table2.loc[key_figs2[4]][strategies2[0]] = np.sum(LR_unm[LR_unm >= 0].count()) / np.sum(LR_unm.count())
+key_fig_table2.loc[key_figs2[4]][strategies2[1]] = np.sum(DT_s_2_unm[DT_s_2_unm >= 0].count()) / np.sum(DT_s_2_unm.count())
+key_fig_table2.loc[key_figs2[4]][strategies2[2]] = np.sum(DT_s_3_unm[DT_s_3_unm >= 0].count()) / np.sum(DT_s_3_unm.count())
