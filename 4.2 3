@@ -1,0 +1,31 @@
+#3a
+pred_size = len(DJ_data.iloc[1002:,1:])
+RF_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
+for day in np.arange(0,pred_size,250):
+    X1 = ewma_20.iloc[day+1:day+1001,:]  # Feature 1 (24)
+    X2 = ewma_60.iloc[day+1:day+1001,:]  # Feature 2 (24)
+    #features = np.hstack((X1,X2))
+    i_stock = 0
+    for stock in ewma_20.columns:
+        Y = DJ_data.iloc[day+1:day+1001][stock]  # Make loop here for each stock as training variable
+        Y2 = np.sign(DJ_data.iloc[day+1:day+1001][stock])  # Target with sign
+        target = Y2
+
+        #, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+        rf_classifier = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
+        rf_classifier.fit(np.hstack((X1,X2)), target)
+        for i in range(250):
+            if day+i < len(DJ_data.iloc[1002:,1:]):
+                #Generate predictions
+                #predictions = rf_classifier.predict(X_test) #What is the prediction, one day after as before?
+                #accuracy = accuracy_score(y_test, predictions)
+                #Think here!
+                predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
+                accuracy = accuracy_score(np.sign(DJ_data.iloc[day+1002+i:day+1003+i][stock]), predictions)
+                RF_dec_mat[day,i_stock] = np.where(predictions[0] > 0, 1, -1)
+        i_stock += 1
+
+RF_s = np.mean(ret_mat * RF_dec_mat, axis = 1)
+RF_s_evo = np.zeros((len(mf_s)+1))
+for i in range(len(LR_s)):
+    RF_s_evo[i + 1] = RF_s_evo[i] + RF_s[i]
