@@ -1,0 +1,120 @@
+OBS: Tar 5-6 timmar att köra :/, borde kanske optimera några parametrar t.ex leaning rate för att undvika overfit
+
+#Lab_4 ML
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as op
+import tensorflow
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
+from keras.optimizers import Adam
+#from sklearn import predic_proba_
+
+DJ_data = pd.read_csv("C:\\Users\\Johan\\Downloads\\DowJones_daily_96_23.csv", delimiter = ",")
+ewma_20 = DJ_data.loc[:,'AAPL':'XOM'].ewm(span = 20).mean()
+ewma_60 = DJ_data.loc[:,'AAPL':'XOM'].ewm(span = 60).mean()
+ret_mat = DJ_data.iloc[1002:,1:].to_numpy(float)
+
+#Log returns:
+DJ_data_log = np.log(1 + DJ_data.iloc[:,1:])
+
+#4a
+pred_size = len(DJ_data.iloc[1002:,1:])
+NN_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
+NN_dec_mat_2 = np.zeros((pred_size,len(DJ_data.columns)-1))
+for day in np.arange(0,pred_size,250):
+    X1 = ewma_20.iloc[day+1:day+1001,:]  # Feature 1 (24)
+    X2 = ewma_60.iloc[day+1:day+1001,:]  # Feature 2 (24)
+    #features = np.hstack((X1,X2))
+    i_stock = 0
+    for stock in ewma_20.columns:
+        Y = DJ_data.iloc[day+1:day+1001][stock]  # Make loop here for each stock as training variable
+        Y2 = np.sign(DJ_data.iloc[day+1:day+1001][stock])  # Target with sign
+        Y2[Y2 == -1] = 0
+        target = Y2
+
+        # Standardizing features
+        scaler = StandardScaler()
+        #X_train = scaler.fit_transform(np.hstack((X1,X2)))
+        #X_test = scaler.transform(np.hstack((ewma_20.iloc[day+1002:day+1253,:], ewma_60.iloc[day+1002:day+1253,:])))
+
+        #Split 1000days data for training and validity
+        X_train, X_test, y_train, y_test = train_test_split(np.hstack((X1,X2)), target, test_size=0.2, shuffle=False)
+
+        # Standardizing features
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        # Creating the neural network model with one hidden layer
+        model = Sequential()
+        model.add(Dense(15, activation='sigmoid', input_shape=(X_train.shape[1],)))
+        model.add(Dropout(0.2))
+        model.add(Dense(1, activation='linear'))  # Output layer with linear activation
+
+        # Creating the neural network model with two hidden layers
+        model2 = Sequential()
+        model2.add(Dense(15, activation='sigmoid', input_shape=(X_train.shape[1],)))
+        model2.add(Dropout(0.2))
+        model2.add(Dense(5, activation='sigmoid'))
+        model2.add(Dropout(0.2))
+        model2.add(Dense(1, activation='linear'))
+
+        # Compiling the model
+        optimizer = Adam(learning_rate=0.001)
+        model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['accuracy'])
+        optimizer = Adam(learning_rate=0.001) #might be appropiate to change the learning rate
+        model2.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['accuracy'])
+
+        # Training the model
+        model.fit(X_train, y_train, epochs=1000, batch_size=100, validation_data=(X_test,y_test), verbose=0) #Change verbose to skip output
+        model2.fit(X_train, y_train, epochs=1000, batch_size=100, validation_data=(X_test,y_test), verbose=0)
+
+        #Predict here        
+        new_data_processed = scaler.transform(np.hstack((ewma_20.iloc[day+1002:day+1253,:], ewma_60.iloc[day+1002:day+1253,:])))
+        # Make predictions
+        predictions_NN = model.predict(new_data_processed)
+        predictions_NN2 = model2.predict(new_data_processed)
+
+        print(day,stock)
+        for i in range(250):
+            if day+i < len(DJ_data.iloc[1002:,1:]):
+                NN_dec_mat[day+i,i_stock] = np.where(predictions_NN[i] > 0.5, 1, -1) #What threshold?
+                NN_dec_mat_2[day+i,i_stock] = np.where(predictions_NN2[i] > 0.5, 1, -1)
+        i_stock += 1
+
+#Converge back 0 to -1, might not be neccesary
+NN_dec_mat[NN_dec_mat == 0] = -1
+NN_dec_mat_2[NN_dec_mat_2 == 0] = -1
+
+NN_s = np.mean(ret_mat * NN_dec_mat, axis = 1)
+NN_s_2 = np.mean(ret_mat * NN_dec_mat_2, axis = 1)
+NN_s_evo = np.zeros((len(NN_s)+1))
+NN_s_2_evo = np.zeros((len(NN_s)+1))
+for i in range(len(NN_s)):
+    NN_s_evo[i + 1] = NN_s_evo[i] + NN_s[i]
+    NN_s_2_evo[i + 1] = NN_s_2_evo[i] + NN_s_2[i]
+
+strategies4 = ["Neural network 1 layer","Neural network 2 layers"]
+diff_df = pd.DataFrame(list(zip(NN_s,NN_s_2)), columns = strategies4)
+key_figs4 = ["Annualized mean","Volatility","Sharpe ratio","Win percentage", "Average precision"]
+key_fig_table4 = pd.DataFrame(np.zeros((len(key_figs4),len(strategies4))), columns = strategies4, index = key_figs4)
+for strat in strategies4:
+    key_fig_table4.loc[key_figs4[0]][strat] = diff_df[strat].mean()*252
+    key_fig_table4.loc[key_figs4[1]][strat] = diff_df[strat].std() * np.sqrt(252)
+    key_fig_table4.loc[key_figs4[2]][strat] = (diff_df[strat].mean() * 252) / (diff_df[strat].std() * np.sqrt(252))
+    key_fig_table4.loc[key_figs4[3]][strat] = diff_df[diff_df[strat] >= 0][strat].count() / len(diff_df[strat])
+
+NN_unm = ret_mat * NN_dec_mat
+NN_2_unm = ret_mat * NN_dec_mat_2
+
+key_fig_table4.loc[key_figs4[4]][strategies4[0]] = np.count_nonzero(NN_unm >= 0) / np.size(NN_unm)
+key_fig_table4.loc[key_figs4[4]][strategies4[1]] = np.count_nonzero(NN_2_unm >= 0) / np.size(NN_2_unm)
