@@ -116,19 +116,7 @@ def markowitz_model(portfolio):
                 #mu * y.T = 1
                 #A * y >= 0
                 #0 <= y
-            '''
-            if count != 0:
-                w_init = weight_mat.iloc[count - 1, :]
-            else:
-                w_init = np.ones(n) / n
-            constraints = ({'type' : 'eq', 'fun' : const_func_1})#,
-            #{'type' : 'eq', 'fun': lambda w : const_func_2(w, window_mean) - grand_mean}) #target return here??? No.
-            f = lambda weights : weights.T @ window_cov @ weights
-            result = op.minimize(f, w_init, method = "SLSQP", constraints = constraints, bounds = bounds)
-            weight_mat.iloc[count,:] = result['x']
-            enc[count] = 1 / np.sum(result['x'] ** 2)
-            portfolio_values[count + 1] = portfolio_values[count] * (np.sum(result['x'] * gross_returns.iloc[count + 100, :]))
-            '''
+
             #CVX implementation
             w_var_vec = cvx.Variable(n)
             cons = [w_var_vec.T @ window_mean_sr == 1, w_var_vec >= 0.00001]
@@ -147,35 +135,17 @@ def markowitz_model(portfolio):
                 numpy_gross = window_gross_sr.to_numpy()
                 demeaned_gross = numpy_gross - np.mean(numpy_gross)
                 sample_cov = 1 / len(window_gross_sr) * window_demeaned.T @ window_demeaned
-                rows, cols = window_cov_sr.shape
-                sigma = np.zeros((rows, cols))
-                #np.fill_diagonal(sigma, np.sqrt(window_cov_sr.diagonal()))
+                #rows, cols = window_cov_sr.shape
+                #sigma = np.zeros((rows, cols))
                 sigma = np.diag(np.sqrt(np.diag(window_cov_sr)))
-                #cf = np.ones((rows, cols))
-                #cf[np.triu_indices(rows, k = 1)] = shrinkage_constant #Upper triangle to shrinkage constant
-                #cf[np.tril_indices(rows, k = -1)] = shrinkage_constant #Lower triangle to shrinkage constant
-                mat = np.ones((n,n)) - np.identity(n) # matrix with ones, subtract diagonal
-                mat = mat*windowCorr # Multiply the off diagonal elements with meanCorr
-                cf = mat+np.identity(n) # Add ones in the diagonal
+
+                mCorr = sum(sum(windowCorr)/((n*n)-n))
+                matrix = np.ones((n,n)) - np.identity(n)
+                matrix = matrix*mCorr
+                cf = matrix+np.identity(n)
                 F = sigma @ cf @ sigma
                 m = (np.ones(n).T @ window_mean_sr) / n
 
-                '''
-                if count != 0:
-                    w_init = weight_mat.iloc[count - 1, :]
-                else:
-                    w_init = np.ones(n) / n
-                shrinkage_cov = (1 - shrinkage_constant) * sample_cov + shrinkage_constant * F
-                mu_shrinkage = (1 - shrinkage_constant) * window_mean + shrinkage_constant * m
-                #grand_mean = np.mean(mu_shrinkage)
-                constraints = ({'type' : 'eq', 'fun' : const_func_1},
-                {'type' : 'eq', 'fun': lambda w : const_func_2(w, mu_shrinkage) - grand_mean})
-                f = lambda weights : weights.T @ shrinkage_cov @ weights
-                result = op.minimize(f, w_init, method = "SLSQP", constraints = constraints, bounds = bounds)
-                weight_mat.iloc[count,:] = result['x']
-                enc[count] = 1 / np.sum(result['x'] ** 2)
-                portfolio_values[count + 1] = portfolio_values[count] * (np.sum(result['x'] * gross_returns.iloc[count + 100, :]))
-                '''
                 shrinkage_cov = (1 - shrinkage_constant) * window_cov_sr + shrinkage_constant * F
                 mu_shrinkage = (1 - shrinkage_constant) * window_mean_sr + shrinkage_constant * m
                 w_var_vec = cvx.Variable(len(window_cov_sr))
@@ -292,7 +262,7 @@ def get_dataframe(portfolios, label_list):
     df = pd.DataFrame(columns = label_list)
     tmp = 0
     for portfolio in portfolios:
-        print(portfolio)
+        #print(portfolio)
         tmp2 = 0
         for t in range(0, 1400, 100):
             df.loc[tmp2, label_list[tmp]] = portfolio[t]
