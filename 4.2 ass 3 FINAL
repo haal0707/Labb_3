@@ -1,0 +1,62 @@
+#Det som har skett är att predictions är uppflyttad en loop för att den förutspår de första 250 dagarna efter träningen.
+#alltså är det endasts där det ska ändras
+
+
+#3a
+pred_size = len(DJ_data.iloc[1002:,1:])
+RF_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
+RF_dec_mat_2 = np.zeros((pred_size,len(DJ_data.columns)-1))
+for day in np.arange(0,pred_size,250):
+    X1 = ewma_20.iloc[day+1:day+1001,:]  # Feature 1 (24)
+    X2 = ewma_60.iloc[day+1:day+1001,:]  # Feature 2 (24)
+    #features = np.hstack((X1,X2))
+    i_stock = 0
+    for stock in ewma_20.columns:
+        Y = DJ_data.iloc[day+1:day+1001][stock]  # Make loop here for each stock as training variable
+        Y2 = np.sign(DJ_data.iloc[day+1:day+1001][stock])  # Target with sign
+        target = Y2
+
+        #, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+        rf_classifier = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
+        rf_classifier.fit(np.hstack((X1,X2)), target)
+
+        rf_classifier2 = RandomForestClassifier(n_estimators=500, max_depth=5, random_state=42)
+        rf_classifier2.fit(np.hstack((X1,X2)), target)
+        predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1002:day+1253,:], ewma_60.iloc[day+1002:day+1253,:])))
+        predictions2 = rf_classifier2.predict(np.hstack((ewma_20.iloc[day+1002:day+1253,:], ewma_60.iloc[day+1002:day+1253,:])))
+        print(day,stock)
+        for i in range(250):
+            if day+i < len(DJ_data.iloc[1002:,1:]):
+                #Generate predictions
+                #predictions = rf_classifier.predict(X_test) #What is the prediction, one day after as before?
+                #accuracy = accuracy_score(y_test, predictions)
+                #Think here!
+                #predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
+                #accuracy = accuracy_score(np.sign(DJ_data.iloc[day+1002+i:day+1003+i][stock]), predictions)
+                RF_dec_mat[day+i,i_stock] = np.where(predictions[i] > 0, 1, -1)
+                RF_dec_mat_2[day+i,i_stock] = np.where(predictions2[i] > 0, 1, -1)
+        i_stock += 1
+
+RF_s = np.mean(ret_mat * RF_dec_mat, axis = 1)
+RF_s_2 = np.mean(ret_mat * RF_dec_mat_2, axis = 1)
+RF_s_evo = np.zeros((len(mf_s)+1))
+RF_s_2_evo = np.zeros((len(mf_s)+1))
+for i in range(len(LR_s)):
+    RF_s_evo[i + 1] = RF_s_evo[i] + RF_s[i]
+    RF_s_2_evo[i + 1] = RF_s_2_evo[i] + RF_s_2[i]
+
+strategies3 = ["Random forest t100d3","Random forest t500d5"]
+diff_df = pd.DataFrame(list(zip(RF_s,RF_s_2)), columns = strategies3)
+key_figs3 = ["Annulized mean","Volatility","Sharpe ratio","Win percentage", "Average precision"]
+key_fig_table3 = pd.DataFrame(np.zeros((len(key_figs),len(strategies3))), columns = strategies3, index = key_figs3)
+for strat in strategies3:
+    key_fig_table3.loc[key_figs3[0]][strat] = diff_df[strat].mean()*252
+    key_fig_table3.loc[key_figs3[1]][strat] = diff_df[strat].std() * np.sqrt(252)
+    key_fig_table3.loc[key_figs3[2]][strat] = (diff_df[strat].mean() * 252) / (diff_df[strat].std() * np.sqrt(252))
+    key_fig_table3.loc[key_figs3[3]][strat] = diff_df[diff_df[strat] >= 0][strat].count() / len(diff_df[strat])
+
+RF_unm = ret_mat * RF_dec_mat
+RF_2_unm = ret_mat * RF_dec_mat_2
+
+key_fig_table3.loc[key_figs3[4]][strategies3[0]] = np.count_nonzero(RF_unm >= 0) / np.size(RF_unm)
+key_fig_table3.loc[key_figs3[4]][strategies3[1]] = np.count_nonzero(RF_2_unm >= 0) / np.size(RF_2_unm)
