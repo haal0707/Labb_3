@@ -71,7 +71,7 @@ for strat in strategies1:
 key_fig_table.loc[key_figs[4]][strategies1[0]] = np.sum(DJ_data.iloc[1002:,1:][DJ_data.iloc[1002:,1:] >= 0].count()) / np.sum(DJ_data.iloc[1002:,1:].count())
 key_fig_table.loc[key_figs[4]][strategies1[1]] = np.sum(mom_unmeaned[mom_unmeaned >= 0].count()) / np.sum(mom_unmeaned.count())
 key_fig_table.loc[key_figs[4]][strategies1[2]] = np.sum(pe_unmeaned[pe_unmeaned >= 0].count()) / np.sum(pe_unmeaned.count())
-'''
+
 #2a
 #Linear regression algorithm, Decision tree classifiers, probably wrong, have to do it stockwise with all the information!
 pred_size = len(DJ_data.iloc[1002:,1:])
@@ -79,36 +79,36 @@ LR_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
 DT_dec_mat_2 = np.zeros((pred_size,len(DJ_data.columns)-1))
 DT_dec_mat_3 = np.zeros((pred_size,len(DJ_data.columns)-1))
 for day in np.arange(0,pred_size,250):
-    X1 = ewma_20.iloc[day+1:day+1001,:]  # Feature 1 (24)
-    X2 = ewma_60.iloc[day+1:day+1001,:]  # Feature 2 (24)
+    X1 = ewma_20.iloc[day:day+1000,:]  # Feature 1 (24)
+    X2 = ewma_60.iloc[day:day+1000,:]  # Feature 2 (24)
     i_stock = 0
-    for stock in ewma_20.columns:
-        Y = DJ_data.iloc[day+1:day+1001][stock]  # Make loop here for each stock as training variable
-        Y2 = np.sign(DJ_data.iloc[day+1:day+1001][stock])  # Target with sign
+    #for stock in ewma_20.columns:
+    Y = DJ_data.iloc[day+1:day+1001,1:]#[stock]  # Make loop here for each stock as training variable
+    Y2 = np.sign(DJ_data.iloc[day+1:day+1001,1:])#[stock])  # Target with sign
 
-        #Create the linear regression model
-        model = LinearRegression()
-        model2 = DecisionTreeClassifier(max_depth=2)
-        model3 = DecisionTreeClassifier(max_depth=3)
+    #Create the linear regression model
+    model = LinearRegression()
+    model2 = DecisionTreeClassifier(max_depth=2)
+    model3 = DecisionTreeClassifier(max_depth=3)
 
-        #print(day,stock)
-        model.fit(np.hstack((X1, X2)), Y)
-        model2.fit(np.hstack((X1, X2)), Y2)
-        model3.fit(np.hstack((X1, X2)), Y2)
-        #Generate predictions
-        for i in range(250):
-            if day+i < len(DJ_data.iloc[1002:,1:]):
-                predictions = model.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
-                predictions2 = model2.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
-                predictions3 = model3.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
-                LR_dec_mat[day + i,i_stock] = np.where(predictions[0] > 0, 1, -1)
-                DT_dec_mat_2[day + i,i_stock] = np.where(predictions2[0] > 0, 1, -1)
-                DT_dec_mat_3[day + i,i_stock] = np.where(predictions3[0] > 0, 1, -1)
-        i_stock += 1
+    #print(day,stock)
+    model.fit(np.hstack((X1, X2)), Y)
+    model2.fit(np.hstack((X1, X2)), Y2)
+    model3.fit(np.hstack((X1, X2)), Y2)
+    #Generate predictions
+    for i in range(250):
+        if day+i < len(DJ_data.iloc[1002:,1:]):
+            predictions = model.predict(np.hstack((ewma_20.iloc[day+1001+i:day+1002+i,:], ewma_60.iloc[day+1001+i:day+1002+i,:])))
+            predictions2 = model2.predict(np.hstack((ewma_20.iloc[day+1001+i:day+1002+i,:], ewma_60.iloc[day+1001+i:day+1002+i,:])))
+            predictions3 = model3.predict(np.hstack((ewma_20.iloc[day+1001+i:day+1002+i,:], ewma_60.iloc[day+1001+i:day+1002+i,:])))
+            LR_dec_mat[day + i,:] = np.where(predictions[0] > 0, 1, -1)
+            DT_dec_mat_2[day + i,:] = np.where(predictions2[0] > 0, 1, -1)
+            DT_dec_mat_3[day + i,:] = np.where(predictions3[0] > 0, 1, -1)
+        #i_stock += 1
 
-LR_s = np.mean(ret_mat * LR_dec_mat, axis = 1)
-DT_s_2 = np.mean(ret_mat * DT_dec_mat_2, axis = 1)
-DT_s_3 = np.mean(ret_mat * DT_dec_mat_3, axis = 1)
+LR_s = np.mean(ret_mat * LR_dec_mat, axis = 1) * (len(DJ_data.columns)-1)
+DT_s_2 = np.mean(ret_mat * DT_dec_mat_2, axis = 1) * (len(DJ_data.columns)-1)
+DT_s_3 = np.mean(ret_mat * DT_dec_mat_3, axis = 1) * (len(DJ_data.columns)-1)
 LR_s_evo = np.zeros((len(mf_s)+1))
 DT_s_2_evo = np.zeros((len(mf_s)+1))
 DT_s_3_evo = np.zeros((len(mf_s)+1))
@@ -145,7 +145,7 @@ key_fig_table2.loc[key_figs2[4]][strategies2[1]] = np.count_nonzero(DT_s_2_unm >
 key_fig_table2.loc[key_figs2[4]][strategies2[2]] = np.count_nonzero(DT_s_3_unm >= 0) / np.size(DT_s_3_unm)
 
 #np.count_nonzero(LR_unm >= 0)
-
+'''
 #3a
 pred_size = len(DJ_data.iloc[1002:,1:])
 RF_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
@@ -177,8 +177,8 @@ RF_s = np.mean(ret_mat * RF_dec_mat, axis = 1)
 RF_s_evo = np.zeros((len(mf_s)+1))
 for i in range(len(LR_s)):
     RF_s_evo[i + 1] = RF_s_evo[i] + RF_s[i]
-
 '''
+
 #3a
 pred_size = len(DJ_data.iloc[1002:,1:])
 RF_dec_mat = np.zeros((pred_size,len(DJ_data.columns)-1))
@@ -188,30 +188,32 @@ for day in np.arange(0,pred_size,250):
     X2 = ewma_60.iloc[day:day+1000,:]  # Feature 2 (24)
     #features = np.hstack((X1,X2))
     i_stock = 0
-    for stock in ewma_20.columns:
-        Y = DJ_data.iloc[day+1:day+1001][stock]  # Make loop here for each stock as training variable
-        Y2 = np.sign(DJ_data.iloc[day+1:day+1001][stock])  # Target with sign
-        target = Y2
+    #for stock in ewma_20.columns:
+    Y = DJ_data.iloc[day+1:day+1001]#[stock]  # Make loop here for each stock as training variable
+    Y2 = np.sign(DJ_data.iloc[day+1:day+1001,1:])#[stock])  # Target with sign
+    target = Y2
 
-        #, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
-        rf_classifier = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
-        rf_classifier.fit(np.hstack((X1,X2)), target)
+    #, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+    rf_classifier = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
+    rf_classifier.fit(np.hstack((X1,X2)), target)
 
-        rf_classifier2 = RandomForestClassifier(n_estimators=500, max_depth=5, random_state=42)
-        rf_classifier2.fit(np.hstack((X1,X2)), target)
-        predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1002:day+1252,:], ewma_60.iloc[day+1002:day+1252,:])))
-        predictions2 = rf_classifier2.predict(np.hstack((ewma_20.iloc[day+1002:day+1252,:], ewma_60.iloc[day+1002:day+1252,:])))
-        for i in range(250):
-            if day+i < len(DJ_data.iloc[1002:,1:]):
-                #Generate predictions
-                #predictions = rf_classifier.predict(X_test) #What is the prediction, one day after as before?
-                #accuracy = accuracy_score(y_test, predictions)
-                #Think here!
-                #predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
-                #accuracy = accuracy_score(np.sign(DJ_data.iloc[day+1002+i:day+1003+i][stock]), predictions)
-                RF_dec_mat[day+i,i_stock] = np.where(predictions[i] > 0, 1, -1)
-                RF_dec_mat_2[day+i,i_stock] = np.where(predictions2[i] > 0, 1, -1)
-        i_stock += 1
+    rf_classifier2 = RandomForestClassifier(n_estimators=500, max_depth=5, random_state=42)
+    rf_classifier2.fit(np.hstack((X1,X2)), target)
+    predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1001:day+1251,:], ewma_60.iloc[day+1001:day+1251,:])))
+    predictions2 = rf_classifier2.predict(np.hstack((ewma_20.iloc[day+1001:day+1251,:], ewma_60.iloc[day+1001:day+1251,:])))
+    for i in range(250):
+        if day+i < len(DJ_data.iloc[1002:,1:]):
+            #Generate predictions
+            #predictions = rf_classifier.predict(X_test) #What is the prediction, one day after as before?
+            #accuracy = accuracy_score(y_test, predictions)
+            #Think here!
+            #predictions = rf_classifier.predict(np.hstack((ewma_20.iloc[day+1002+i:day+1003+i,:], ewma_60.iloc[day+1002+i:day+1003+i,:])))
+            #accuracy = accuracy_score(np.sign(DJ_data.iloc[day+1002+i:day+1003+i][stock]), predictions)
+            #RF_dec_mat[day+i,i_stock] = np.where(predictions[i] > 0, 1, -1)
+            #RF_dec_mat_2[day+i,i_stock] = np.where(predictions2[i] > 0, 1, -1)
+            RF_dec_mat[day+i,:] = np.where(predictions[i] > 0, 1, -1)
+            RF_dec_mat_2[day+i,:] = np.where(predictions2[i] > 0, 1, -1)
+        #i_stock += 1
 
 RF_s = np.mean(ret_mat * RF_dec_mat, axis = 1) * (len(DJ_data.columns)-1)
 RF_s_2 = np.mean(ret_mat * RF_dec_mat_2, axis = 1) * (len(DJ_data.columns)-1)
